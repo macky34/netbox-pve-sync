@@ -1,0 +1,3 @@
+pynetbox==7.4.1
+proxmoxer==2.2.0
+requests==2.32.3
