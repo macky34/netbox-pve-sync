@@ -7,20 +7,26 @@ from proxmoxer import ProxmoxAPI
 
 
 def _load_nb_objects(_nb_api: pynetbox.api) -> dict:
-    _nb_objects = {}
+    _nb_objects = {
+        'devices': {},
+        'virtual_machines': {},
+        'virtual_machines_interfaces': {},
+        'mac_addresses': {},
+        'prefixes': {},
+        'ip_addresses': {},
+        'vlans': {},
+        'disks': {},
+    }
 
     # Load NetBox devices
-    _nb_objects['devices'] = {}
     for _nb_device in _nb_api.dcim.devices.all():
         _nb_objects['devices'][_nb_device.name.lower()] = _nb_device
 
     # Load NetBox virtual machines
-    _nb_objects['virtual_machines'] = {}
     for _nb_virtual_machine in _nb_api.virtualization.virtual_machines.all():
         _nb_objects['virtual_machines'][_nb_virtual_machine.serial] = _nb_virtual_machine
 
     # Load NetBox interfaces
-    _nb_objects['virtual_machines_interfaces'] = {}
     for _nb_interface in _nb_api.virtualization.interfaces.all():
         if _nb_interface.virtual_machine.id not in _nb_objects['virtual_machines_interfaces']:
             _nb_objects['virtual_machines_interfaces'][_nb_interface.virtual_machine.id] = {}
@@ -28,24 +34,27 @@ def _load_nb_objects(_nb_api: pynetbox.api) -> dict:
         _nb_objects['virtual_machines_interfaces'][_nb_interface.virtual_machine.id][_nb_interface.name] = _nb_interface
 
     # Load NetBox mac addresses
-    _nb_objects['mac_addresses'] = {}
     for _nb_mac_address in _nb_api.dcim.mac_addresses.all():
         _nb_objects['mac_addresses'][_nb_mac_address.mac_address] = _nb_mac_address
 
     # Load NetBox IP ranges
-    _nb_objects['prefixes'] = {}
     for _nb_prefix in _nb_api.ipam.prefixes.all():
         _nb_objects['prefixes'][_nb_prefix.prefix] = _nb_prefix
 
     # Load NetBox IP addresses
-    _nb_objects['ip_addresses'] = {}
     for _nb_ip_address in _nb_api.ipam.ip_addresses.all():
         _nb_objects['ip_addresses'][_nb_ip_address['address']] = _nb_ip_address
 
     # Load NetBox vLANs
-    _nb_objects['vlans'] = {}
     for _nb_vlan in _nb_api.ipam.vlans.all():
         _nb_objects['vlans'][str(_nb_vlan.vid)] = _nb_vlan
+
+    # Load NetBox disks
+    for _nb_disk in _nb_api.virtualization.virtual_disks.all():
+        if _nb_disk.virtual_machine.id not in _nb_objects['disks']:
+            _nb_objects['disks'][_nb_disk.virtual_machine.id] = {}
+
+        _nb_objects['disks'][_nb_disk.virtual_machine.id][_nb_disk.name] = _nb_disk
 
     return _nb_objects
 
@@ -109,6 +118,14 @@ def _process_pve_virtual_machine(
         pve_virtual_machine_config,
         nb_virtual_machine,
         pve_virtual_machine_ip_addresses,
+    )
+
+    # Handle the VM disks
+    _process_pve_virtual_machine_disks(
+        _nb_api,
+        _nb_objects,
+        pve_virtual_machine_config,
+        nb_virtual_machine,
     )
 
     return _nb_objects
@@ -244,6 +261,53 @@ def _process_pve_virtual_machine_network_interface(
     return _nb_objects
 
 
+def _process_pve_virtual_machine_disks(
+        _nb_api: pynetbox.api,
+        _nb_objects: dict,
+        _pve_virtual_machine_config: dict,
+        _nb_virtual_machine: any,
+) -> dict:
+    # Handle the VM disks
+    for (_config_key, _config_value) in _pve_virtual_machine_config.items():
+        if not _config_key.startswith('scsi'):
+            continue
+        if _config_key == 'scsihw':
+            continue
+
+        _disk_definition = _parse_pve_disk_definition(_config_value)
+
+        _process_pve_virtual_machine_disk(
+            _nb_api,
+            _nb_objects,
+            _nb_virtual_machine,
+            _disk_definition['name'],
+            _process_pve_disk_size(_disk_definition['size']),
+        )
+
+    return _nb_objects
+
+
+def _process_pve_virtual_machine_disk(
+        _nb_api: pynetbox.api,
+        _nb_objects: dict,
+        _nb_virtual_machine: any,
+        _disk_name: str,
+        _disk_size: int,
+) -> dict:
+    nb_disk = _nb_objects['disks'].get(_nb_virtual_machine.id, {}).get(_disk_name)
+    if nb_disk is None:
+        _nb_api.virtualization.virtual_disks.create(
+            name=_disk_name,
+            size=_disk_size,
+            virtual_machine=_nb_virtual_machine.id,
+        )
+    else:
+        nb_disk.size = _disk_size
+        nb_disk.save()
+
+    return _nb_objects
+
+
 def _parse_pve_network_definition(_raw_network_definition: str) -> dict:
     _network_definition = {}
 
@@ -252,6 +316,31 @@ def _parse_pve_network_definition(_raw_network_definition: str) -> dict:
         _network_definition[_component_parts[0]] = _component_parts[1]
 
     return _network_definition
+
+
+def _parse_pve_disk_definition(_raw_disk_definition: str) -> dict:
+    _disk_definition = {}
+
+    for _component in _raw_disk_definition.split(','):
+        _component_parts = _component.split('=')
+        if len(_component_parts) == 1:
+            _disk_definition['name'] = _component_parts[0]
+        else:
+            _disk_definition[_component_parts[0]] = _component_parts[1]
+
+    return _disk_definition
+
+
+def _process_pve_disk_size(_raw_disk_size: str) -> int:
+    size = _raw_disk_size[:-1]
+    size_unit = _raw_disk_size[-1]
+
+    if size_unit == 'G':
+        return int(size) * 1_000
+    if size_unit == 'T':
+        return int(size) * 1_000_000
+
+    return -1
 
 
 def main():
