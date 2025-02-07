@@ -376,17 +376,6 @@ def main():
                 pve_virtual_machine,
             )
 
-            # TODO: Handle the disk
-
-            # Then create the disks if not exists, update them otherwise
-            # Then create the network interface if not exists, update them otherwise
-            # Link the network interface to the range if not exists
-
-            # print(pve_api.nodes(pve_node['node']).qemu(pve_virtual_machine['vmid']).config.get())
-
-            # if vm['status'] == 'running':
-            # print(pve_api.nodes(node['node']).qemu(vm['vmid']).agent('network-get-interfaces').get())
-
 
 if __name__ == '__main__':
     main()
