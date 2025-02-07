@@ -1,9 +1,247 @@
 import os
 import sys
+from typing import Optional
 
 import pynetbox
 from proxmoxer import ProxmoxAPI
-from rich import print
+
+
+def _load_nb_objects(_nb_api: pynetbox.api) -> dict:
+    _nb_objects = {}
+
+    # Load NetBox devices
+    _nb_objects['devices'] = {}
+    for _nb_device in _nb_api.dcim.devices.all():
+        _nb_objects['devices'][_nb_device.name.lower()] = _nb_device
+
+    # Load NetBox virtual machines
+    _nb_objects['virtual_machines'] = {}
+    for _nb_virtual_machine in _nb_api.virtualization.virtual_machines.all():
+        _nb_objects['virtual_machines'][_nb_virtual_machine.serial] = _nb_virtual_machine
+
+    # Load NetBox interfaces
+    _nb_objects['virtual_machines_interfaces'] = {}
+    for _nb_interface in _nb_api.virtualization.interfaces.all():
+        if _nb_interface.virtual_machine.id not in _nb_objects['virtual_machines_interfaces']:
+            _nb_objects['virtual_machines_interfaces'][_nb_interface.virtual_machine.id] = {}
+
+        _nb_objects['virtual_machines_interfaces'][_nb_interface.virtual_machine.id][_nb_interface.name] = _nb_interface
+
+    # Load NetBox mac addresses
+    _nb_objects['mac_addresses'] = {}
+    for _nb_mac_address in _nb_api.dcim.mac_addresses.all():
+        _nb_objects['mac_addresses'][_nb_mac_address.mac_address] = _nb_mac_address
+
+    # Load NetBox IP ranges
+    _nb_objects['prefixes'] = {}
+    for _nb_prefix in _nb_api.ipam.prefixes.all():
+        _nb_objects['prefixes'][_nb_prefix.prefix] = _nb_prefix
+
+    # Load NetBox IP addresses
+    _nb_objects['ip_addresses'] = {}
+    for _nb_ip_address in _nb_api.ipam.ip_addresses.all():
+        _nb_objects['ip_addresses'][_nb_ip_address['address']] = _nb_ip_address
+
+    # Load NetBox vLANs
+    _nb_objects['vlans'] = {}
+    for _nb_vlan in _nb_api.ipam.vlans.all():
+        _nb_objects['vlans'][str(_nb_vlan.vid)] = _nb_vlan
+
+    return _nb_objects
+
+
+def _process_pve_virtual_machine(
+        _pve_api: ProxmoxAPI,
+        _nb_api: pynetbox.api,
+        _nb_objects: dict,
+        _pve_node: dict,
+        _pve_virtual_machine: dict
+) -> dict:
+    pve_virtual_machine_config = _pve_api.nodes(_pve_node['node']).qemu(_pve_virtual_machine['vmid']).config.get()
+
+    try:
+        pve_virtual_machine_agent_interfaces = _pve_api \
+            .nodes(_pve_node['node']) \
+            .qemu(_pve_virtual_machine['vmid']) \
+            .agent('network-get-interfaces') \
+            .get()
+    except Exception:
+        pve_virtual_machine_agent_interfaces = {'result': []}
+
+    # Extract IP addresses from QEMU
+    pve_virtual_machine_ip_addresses = {}
+    for result in pve_virtual_machine_agent_interfaces['result']:
+        pve_virtual_machine_ip_addresses[result['name']] = result['ip-addresses']
+
+    # This script does not create the hardware devices.
+    nb_device = _nb_objects['devices'].get(_pve_node['node'].lower())
+    if nb_device is None:
+        print(f'The device {_pve_node["node"]} is not created on NetBox. Exiting.')
+        sys.exit(1)
+    else:
+        pass
+
+    # Create the virtual machine if it exists, update it otherwise
+    nb_virtual_machine = _nb_objects['virtual_machines'].get(str(_pve_virtual_machine['vmid']))
+    if nb_virtual_machine is None:
+        nb_virtual_machine = _nb_api.virtualization.virtual_machines.create(
+            serial=_pve_virtual_machine['vmid'],
+            name=_pve_virtual_machine['name'],
+            site=nb_device.site.id,
+            cluster=1,  # TODO
+            device=nb_device.id,
+            vcpus=pve_virtual_machine_config['cores'],
+            memory=int(pve_virtual_machine_config['memory']),
+        )
+    else:
+        nb_virtual_machine.name = _pve_virtual_machine['name']
+        nb_virtual_machine.site = nb_device.site.id
+        nb_virtual_machine.cluster = 1
+        nb_virtual_machine.device = nb_device.id
+        nb_virtual_machine.vcpus = pve_virtual_machine_config['cores']
+        nb_virtual_machine.memory = int(pve_virtual_machine_config['memory'])
+        nb_virtual_machine.save()
+
+    # Handle the VM network interfaces
+    _process_pve_virtual_machine_network_interfaces(
+        _nb_api,
+        _nb_objects,
+        pve_virtual_machine_config,
+        nb_virtual_machine,
+        pve_virtual_machine_ip_addresses,
+    )
+
+    return _nb_objects
+
+
+def _process_pve_virtual_machine_network_interfaces(
+        _nb_api: pynetbox.api,
+        _nb_objects: dict,
+        _pve_virtual_machine_config: dict,
+        _nb_virtual_machine: any,
+        _pve_virtual_machine_ip_addresses: dict,
+) -> dict:
+    # Handle the VM network interfaces
+    for (_config_key, _config_value) in _pve_virtual_machine_config.items():
+        if not _config_key.startswith('net'):
+            continue
+
+        _network_definition = _parse_pve_network_definition(_config_value)
+
+        # Determinate MAC address
+        network_mac_address = None
+        for _model in ['virtio', 'e1000']:
+            if _model in _network_definition:
+                network_mac_address = _network_definition[_model]
+                break
+
+        if network_mac_address is None:
+            continue
+
+        _process_pve_virtual_machine_network_interface(
+            _nb_api,
+            _nb_objects,
+            _nb_virtual_machine,
+            _config_key,
+            network_mac_address,
+            _network_definition.get('tag'),
+            _pve_virtual_machine_ip_addresses,
+        )
+
+    return _nb_objects
+
+
+def _process_pve_virtual_machine_network_interface(
+        _nb_api: pynetbox.api,
+        _nb_objects: dict,
+        _nb_virtual_machine: any,
+        _interface_name: str,
+        _interface_mac_address: str,
+        _interface_vlan_id: Optional[int],
+        _pve_virtual_machine_ip_addresses: dict,
+) -> dict:
+    nb_virtual_machines_interface = _nb_objects['virtual_machines_interfaces'] \
+        .get(_nb_virtual_machine.id, {}) \
+        .get(_interface_name)
+
+    if nb_virtual_machines_interface is None:
+        nb_virtual_machines_interface = _nb_api.virtualization.interfaces.create(
+            virtual_machine=_nb_virtual_machine.id,
+            name=_interface_name,
+            description=_interface_mac_address,
+        )
+
+        if _nb_virtual_machine.id not in _nb_objects['virtual_machines_interfaces']:
+            _nb_objects['virtual_machines_interfaces'][_nb_virtual_machine.id] = {}
+
+        _nb_objects['virtual_machines_interfaces'][_nb_virtual_machine.id][
+            _interface_name] = nb_virtual_machines_interface
+
+    # Create the MAC address and link it to the VM
+    nb_mac_address = _nb_objects['mac_addresses'].get(_interface_mac_address)
+    if nb_mac_address is None:
+        nb_mac_address = _nb_api.dcim.mac_addresses.create(
+            mac_address=_interface_mac_address,
+            assigned_object_type='virtualization.vminterface',
+            assigned_object_id=nb_virtual_machines_interface.id,
+        )
+
+        _nb_objects['mac_addresses'][_interface_mac_address] = nb_mac_address
+
+        nb_virtual_machines_interface.primary_mac_address = nb_mac_address.id
+        nb_virtual_machines_interface.save()
+
+    # TODO: Improve Multiple IP address handling
+    _pve_virtual_machine_ip_address = None
+    for raw_interface_name in ['ens18', 'ens19']:
+        if raw_interface_name in _pve_virtual_machine_ip_addresses:
+            _pve_virtual_machine_ip_address = _pve_virtual_machine_ip_addresses[raw_interface_name][0]
+            break
+
+    if _pve_virtual_machine_ip_address is not None:
+        _virtual_machine_address = _pve_virtual_machine_ip_address['ip-address']
+        _virtual_machine_address_mask = _pve_virtual_machine_ip_address['prefix']
+        _virtual_machine_full_address = f'{_virtual_machine_address}/{_virtual_machine_address_mask}'
+
+        # First, determinate if the prefix exists
+        _prefix_network_address = '.'.join(_virtual_machine_address.split('.')[:-1]) + '.0'
+        _prefix_network_full_address = f'{_prefix_network_address}/{_virtual_machine_address_mask}'
+
+        nb_prefix = _nb_objects['prefixes'].get(_prefix_network_full_address)
+        if nb_prefix is None:
+            nb_prefix = _nb_api.ipam.prefixes.create(prefix=_prefix_network_full_address)
+            _nb_objects['prefixes'][nb_prefix.prefix] = nb_prefix
+
+        nb_ip_address = _nb_objects['ip_addresses'].get(_virtual_machine_full_address)
+        if nb_ip_address is None:
+            nb_ip_address = _nb_api.ipam.ip_addresses.create(
+                address=_virtual_machine_full_address,
+                assigned_object_type='virtualization.vminterface',
+                assigned_object_id=nb_virtual_machines_interface.id,
+            )
+            _nb_objects['ip_addresses'][nb_ip_address.address] = nb_ip_address
+        else:
+            nb_ip_address.assigned_object_type = 'virtualization.vminterface'
+            nb_ip_address.assigned_object_id = nb_virtual_machines_interface.id
+            nb_ip_address.save()
+
+        _nb_virtual_machine.primary_ip4 = nb_ip_address.id
+        _nb_virtual_machine.save()
+
+        # Handle VLAN
+        if _interface_vlan_id is not None:
+            nb_vlan = _nb_objects['vlans'].get(str(_interface_vlan_id))
+            if nb_vlan is None:
+                nb_vlan = _nb_api.ipam.vlans.create(
+                    vid=_interface_vlan_id,
+                    name=f'VLAN {_interface_vlan_id}',
+                )
+                _nb_objects['vlans'][_interface_vlan_id] = nb_vlan
+
+            nb_prefix.vlan = nb_vlan.id
+            nb_prefix.save()
+
+    return _nb_objects
 
 
 def _parse_pve_network_definition(_raw_network_definition: str) -> dict:
@@ -32,115 +270,20 @@ def main():
         token=os.environ['NB_API_TOKEN'],
     )
 
-    # Load NetBox devices
-    nb_devices = {}
-    for _nb_device in nb_api.dcim.devices.all():
-        nb_devices[_nb_device.name.lower()] = _nb_device
-
-    # Load NetBox virtual machines
-    nb_virtual_machines = {}
-    for _nb_virtual_machine in nb_api.virtualization.virtual_machines.all():
-        nb_virtual_machines[_nb_virtual_machine.serial] = _nb_virtual_machine
-
-    # Load NetBox interfaces
-    nb_virtual_machines_interfaces = {}
-    for _nb_interface in nb_api.virtualization.interfaces.all():
-        if _nb_interface.virtual_machine.id not in nb_virtual_machines_interfaces:
-            nb_virtual_machines_interfaces[_nb_interface.virtual_machine.id] = {}
-
-        nb_virtual_machines_interfaces[_nb_interface.virtual_machine.id][_nb_interface.name] = _nb_interface
-
-    # Load NetBox mac addresses
-    nb_mac_addresses = {}
-    for _nb_mac_address in nb_api.dcim.mac_addresses.all():
-        nb_mac_addresses[_nb_mac_address.mac_address] = _nb_mac_address
-
-    # Load NetBox IP addresses
-    nb_ip_addresses = {}
-    for _nb_ip_address in nb_api.ipam.ip_addresses.all():
-        nb_ip_addresses[_nb_ip_address['address']] = _nb_ip_address
+    # Load NetBox objects
+    nb_objects = _load_nb_objects(nb_api)
 
     # Process Proxmox nodes
     for pve_node in pve_api.nodes.get():
         # Process Proxmox virtual machines per node
-        for pve_virtual_machine in pve_api.nodes(pve_node["node"]).qemu.get():
-            pve_virtual_machine_config = pve_api.nodes(pve_node['node']).qemu(pve_virtual_machine['vmid']).config.get()
-
-            # This script does not create the hardware devices.
-            nb_device = nb_devices.get(pve_node['node'].lower())
-            if nb_device is None:
-                print(f'The device {pve_node["node"]} is not created on NetBox. Exiting.')
-                sys.exit(1)
-            else:
-                pass
-
-            # Create the virtual machine if it exists, update it otherwise
-            nb_virtual_machine = nb_virtual_machines.get(str(pve_virtual_machine['vmid']))
-            if nb_virtual_machine is None:
-                nb_virtual_machine = nb_api.virtualization.virtual_machines.create(
-                    serial=pve_virtual_machine['vmid'],
-                    name=pve_virtual_machine['name'],
-                    site=nb_device.site.id,
-                    cluster=1,  # TODO
-                    device=nb_device.id,
-                    vcpus=pve_virtual_machine_config['cores'],
-                    memory=int(pve_virtual_machine_config['memory']),
-                )
-            else:
-                nb_virtual_machine.name = pve_virtual_machine['name']
-                nb_virtual_machine.site = nb_device.site.id
-                nb_virtual_machine.cluster = 1
-                nb_virtual_machine.device = nb_device.id
-                nb_virtual_machine.vcpus = pve_virtual_machine_config['cores']
-                nb_virtual_machine.memory = int(pve_virtual_machine_config['memory'])
-                nb_virtual_machine.save()
-
-            # Handle the VM network interfaces
-            for (_config_key, _config_value) in pve_virtual_machine_config.items():
-                if not _config_key.startswith('net'):
-                    continue
-
-                _network_definition = _parse_pve_network_definition(_config_value)
-
-                # Determinate MAC address
-                network_mac_address = None
-                for _model in ['virtio', 'e1000']:
-                    if _model in _network_definition:
-                        network_mac_address = _network_definition[_model]
-                        break
-
-                if network_mac_address is None:
-                    continue
-
-                nb_virtual_machines_interface = nb_virtual_machines_interfaces \
-                    .get(nb_virtual_machine.id, {}) \
-                    .get(_config_key)
-
-                if nb_virtual_machines_interface is None:
-                    nb_virtual_machines_interface = nb_api.virtualization.interfaces.create(
-                        virtual_machine=nb_virtual_machine.id,
-                        name=_config_key,
-                        description=network_mac_address,
-                    )
-
-                    if nb_virtual_machine.id not in nb_virtual_machines_interfaces:
-                        nb_virtual_machines_interfaces[nb_virtual_machine.id] = {}
-
-                    nb_virtual_machines_interfaces[nb_virtual_machine.id][_config_key] = nb_virtual_machines_interface
-
-                # Create the MAC address and link it to the VM
-                nb_mac_address = nb_mac_addresses.get(network_mac_address)
-                if nb_mac_address is None:
-                    nb_mac_address = nb_api.dcim.mac_addresses.create(
-                        mac_address=network_mac_address,
-                        assigned_object_type='virtualization.vminterface',
-                        assigned_object_id=nb_virtual_machines_interface.id,
-                    )
-
-                    nb_mac_addresses[network_mac_address] = nb_mac_address
-
-                    nb_virtual_machines_interface.primary_mac_address = nb_mac_address.id
-                    nb_virtual_machines_interface.save()
+        for pve_virtual_machine in pve_api.nodes(pve_node['node']).qemu.get():
+            _process_pve_virtual_machine(
+                pve_api,
+                nb_api,
+                nb_objects,
+                pve_node,
+                pve_virtual_machine,
+            )
 
             # TODO: Handle the disk
 
