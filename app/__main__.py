@@ -101,6 +101,7 @@ def _process_pve_virtual_machine(
             device=nb_device.id,
             vcpus=pve_virtual_machine_config['cores'],
             memory=int(pve_virtual_machine_config['memory']),
+            status='active' if _pve_virtual_machine['status'] == 'running' else 'offline',
         )
     else:
         nb_virtual_machine.name = _pve_virtual_machine['name']
@@ -109,6 +110,7 @@ def _process_pve_virtual_machine(
         nb_virtual_machine.device = nb_device.id
         nb_virtual_machine.vcpus = pve_virtual_machine_config['cores']
         nb_virtual_machine.memory = int(pve_virtual_machine_config['memory'])
+        nb_virtual_machine.status = 'active' if _pve_virtual_machine['status'] == 'running' else 'offline'
         nb_virtual_machine.save()
 
     # Handle the VM network interfaces
