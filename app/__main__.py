@@ -254,17 +254,24 @@ def _process_pve_virtual_machine_network_interface(
             nb_prefix = _nb_api.ipam.prefixes.create(prefix=_prefix_network_full_address)
             _nb_objects['prefixes'][nb_prefix.prefix] = nb_prefix
 
+        if 'dns_name' in nb_prefix.custom_fields and nb_prefix.custom_fields['dns_name'] is not None:
+            ip_address_dns_name = f'{_nb_virtual_machine.name}.{nb_prefix.custom_fields["dns_name"]}'
+        else:
+            ip_address_dns_name = ''
+
         nb_ip_address = _nb_objects['ip_addresses'].get(_virtual_machine_full_address)
         if nb_ip_address is None:
             nb_ip_address = _nb_api.ipam.ip_addresses.create(
                 address=_virtual_machine_full_address,
                 assigned_object_type='virtualization.vminterface',
                 assigned_object_id=nb_virtual_machines_interface.id,
+                dns_name=ip_address_dns_name
             )
             _nb_objects['ip_addresses'][nb_ip_address.address] = nb_ip_address
         else:
             nb_ip_address.assigned_object_type = 'virtualization.vminterface'
             nb_ip_address.assigned_object_id = nb_virtual_machines_interface.id
+            nb_ip_address.dns_name = ip_address_dns_name
             nb_ip_address.save()
 
         _nb_virtual_machine.primary_ip4 = nb_ip_address.id
