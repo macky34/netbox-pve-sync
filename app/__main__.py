@@ -93,11 +93,13 @@ def _process_pve_virtual_machine(
         _pve_tags: [str],
         _pve_virtual_machine: dict
 ) -> dict:
-    pve_virtual_machine_config = _pve_api.nodes(_nb_device.name).qemu(_pve_virtual_machine['vmid']).config.get()
+    _pve_node_name = _nb_device.name.lower()
+
+    pve_virtual_machine_config = _pve_api.nodes(_pve_node_name).qemu(_pve_virtual_machine['vmid']).config.get()
 
     try:
         pve_virtual_machine_agent_interfaces = _pve_api \
-            .nodes(_nb_device.name) \
+            .nodes(_pve_node_name) \
             .qemu(_pve_virtual_machine['vmid']) \
             .agent('network-get-interfaces') \
             .get()
