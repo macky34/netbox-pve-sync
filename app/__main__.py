@@ -16,6 +16,7 @@ def _load_nb_objects(_nb_api: pynetbox.api) -> dict:
         'ip_addresses': {},
         'vlans': {},
         'disks': {},
+        'tags': {},
     }
 
     # Load NetBox devices
@@ -56,6 +57,31 @@ def _load_nb_objects(_nb_api: pynetbox.api) -> dict:
 
         _nb_objects['disks'][_nb_disk.virtual_machine.id][_nb_disk.name] = _nb_disk
 
+    # Load NetBox tags
+    for _nb_tag in _nb_api.extras.tags.all():
+        _nb_objects['tags'][_nb_tag.name] = _nb_tag
+
+    return _nb_objects
+
+
+def _process_pve_tags(
+        _pve_api: ProxmoxAPI,
+        _nb_api: pynetbox.api,
+        _nb_objects: dict,
+) -> dict:
+    # TODO: First tags
+
+    # Then pool (we treat them as tags)
+    for _pve_pool in _pve_api.pools.get():
+        _tag_name = f'Pool/{_pve_pool["poolid"]}'
+        _nb_tag = _nb_objects['tags'].get(_tag_name)
+        if _nb_tag is None:
+            _nb_tag = _nb_api.extras.tags.create(
+                name=_tag_name,
+                slug=f'pool-{_pve_pool["poolid"]}'.lower(),
+                description=f'Proxmox pool {_pve_pool["poolid"]}',
+            )
+
     return _nb_objects
 
 
@@ -63,14 +89,15 @@ def _process_pve_virtual_machine(
         _pve_api: ProxmoxAPI,
         _nb_api: pynetbox.api,
         _nb_objects: dict,
-        _pve_node: dict,
+        _nb_device: any,
+        _pve_tags: [str],
         _pve_virtual_machine: dict
 ) -> dict:
-    pve_virtual_machine_config = _pve_api.nodes(_pve_node['node']).qemu(_pve_virtual_machine['vmid']).config.get()
+    pve_virtual_machine_config = _pve_api.nodes(_nb_device.name).qemu(_pve_virtual_machine['vmid']).config.get()
 
     try:
         pve_virtual_machine_agent_interfaces = _pve_api \
-            .nodes(_pve_node['node']) \
+            .nodes(_nb_device.name) \
             .qemu(_pve_virtual_machine['vmid']) \
             .agent('network-get-interfaces') \
             .get()
@@ -82,35 +109,30 @@ def _process_pve_virtual_machine(
     for result in pve_virtual_machine_agent_interfaces['result']:
         pve_virtual_machine_ip_addresses[result['name']] = result['ip-addresses']
 
-    # This script does not create the hardware devices.
-    nb_device = _nb_objects['devices'].get(_pve_node['node'].lower())
-    if nb_device is None:
-        print(f'The device {_pve_node["node"]} is not created on NetBox. Exiting.')
-        sys.exit(1)
-    else:
-        pass
-
     # Create the virtual machine if it exists, update it otherwise
     nb_virtual_machine = _nb_objects['virtual_machines'].get(str(_pve_virtual_machine['vmid']))
     if nb_virtual_machine is None:
         nb_virtual_machine = _nb_api.virtualization.virtual_machines.create(
             serial=_pve_virtual_machine['vmid'],
             name=_pve_virtual_machine['name'],
-            site=nb_device.site.id,
+            site=_nb_device.site.id,
             cluster=1,  # TODO
-            device=nb_device.id,
+            device=_nb_device.id,
             vcpus=pve_virtual_machine_config['cores'],
             memory=int(pve_virtual_machine_config['memory']),
             status='active' if _pve_virtual_machine['status'] == 'running' else 'offline',
+            tags=list(map(lambda _pve_tag_name: _nb_objects['tags'][_pve_tag_name], _pve_tags))
         )
     else:
         nb_virtual_machine.name = _pve_virtual_machine['name']
-        nb_virtual_machine.site = nb_device.site.id
+        nb_virtual_machine.site = _nb_device.site.id
         nb_virtual_machine.cluster = 1
-        nb_virtual_machine.device = nb_device.id
+        nb_virtual_machine.device = _nb_device.id
         nb_virtual_machine.vcpus = pve_virtual_machine_config['cores']
         nb_virtual_machine.memory = int(pve_virtual_machine_config['memory'])
         nb_virtual_machine.status = 'active' if _pve_virtual_machine['status'] == 'running' else 'offline'
+        nb_virtual_machine.local_context_data = _pve_virtual_machine
+        nb_virtual_machine.tags = list(map(lambda _pve_tag_name: _nb_objects['tags'][_pve_tag_name], _pve_tags))
         nb_virtual_machine.save()
 
     # Handle the VM network interfaces
@@ -364,15 +386,43 @@ def main():
     # Load NetBox objects
     nb_objects = _load_nb_objects(nb_api)
 
+    # Process Proxmox tags
+    _process_pve_tags(
+        pve_api,
+        nb_api,
+        nb_objects,
+    )
+
+    # Fetch VM tags from Proxmox
+    pve_vm_tags = {}
+    for pve_vm_resource in pve_api.cluster.resources.get(type='vm'):
+        pve_vm_tags[pve_vm_resource['vmid']] = []
+
+        pve_vm_tags[pve_vm_resource['vmid']].append(f'Pool/{pve_vm_resource["pool"]}')
+
+        if 'tags' in pve_vm_resource:
+            pass  # TODO: pve_vm_tags[pve_vm_resource['vmid']].append(pve_vm_resource['tags'])
+
     # Process Proxmox nodes
     for pve_node in pve_api.nodes.get():
+        # This script does not create the hardware devices.
+        nb_device = nb_objects['devices'].get(pve_node['node'].lower())
+        if nb_device is None:
+            print(f'The device {pve_node["node"]} is not created on NetBox. Exiting.')
+            sys.exit(1)
+        else:
+            nb_device.local_context_data = pve_node
+            nb_device.status = 'active' if pve_node['status'] == 'online' else 'offline'
+            nb_device.save()
+
         # Process Proxmox virtual machines per node
         for pve_virtual_machine in pve_api.nodes(pve_node['node']).qemu.get():
             _process_pve_virtual_machine(
                 pve_api,
                 nb_api,
                 nb_objects,
-                pve_node,
+                nb_device,
+                pve_vm_tags.get(pve_virtual_machine['vmid'], []),
                 pve_virtual_machine,
             )
 
