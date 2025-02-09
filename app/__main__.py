@@ -131,7 +131,6 @@ def _process_pve_virtual_machine(
         nb_virtual_machine.vcpus = pve_virtual_machine_config['cores']
         nb_virtual_machine.memory = int(pve_virtual_machine_config['memory'])
         nb_virtual_machine.status = 'active' if _pve_virtual_machine['status'] == 'running' else 'offline'
-        nb_virtual_machine.local_context_data = _pve_virtual_machine
         nb_virtual_machine.tags = list(map(lambda _pve_tag_name: _nb_objects['tags'][_pve_tag_name], _pve_tags))
         nb_virtual_machine.save()
 
@@ -411,7 +410,6 @@ def main():
             print(f'The device {pve_node["node"]} is not created on NetBox. Exiting.')
             sys.exit(1)
         else:
-            nb_device.local_context_data = pve_node
             nb_device.status = 'active' if pve_node['status'] == 'online' else 'offline'
             nb_device.save()
 
