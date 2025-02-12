@@ -314,6 +314,7 @@ def _process_pve_virtual_machine_disks(
             _nb_virtual_machine,
             _disk_definition['name'],
             _process_pve_disk_size(_disk_definition['size']),
+            _disk_definition.get('backup', '1') == '1',
         )
 
     return _nb_objects
@@ -325,6 +326,7 @@ def _process_pve_virtual_machine_disk(
         _nb_virtual_machine: any,
         _disk_name: str,
         _disk_size: int,
+        _has_backup: bool,
 ) -> dict:
     nb_disk = _nb_objects['disks'].get(_nb_virtual_machine.id, {}).get(_disk_name)
     if nb_disk is None:
@@ -332,9 +334,13 @@ def _process_pve_virtual_machine_disk(
             name=_disk_name,
             size=_disk_size,
             virtual_machine=_nb_virtual_machine.id,
+            custom_fields={
+                'backup': _has_backup,
+            }
         )
     else:
         nb_disk.size = _disk_size
+        nb_disk.custom_fields['backup'] = _has_backup
         nb_disk.save()
 
     return _nb_objects
