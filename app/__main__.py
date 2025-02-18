@@ -123,7 +123,7 @@ def _process_pve_virtual_machine(
             vcpus=pve_virtual_machine_config['cores'],
             memory=int(pve_virtual_machine_config['memory']),
             status='active' if _pve_virtual_machine['status'] == 'running' else 'offline',
-            tags=list(map(lambda _pve_tag_name: _nb_objects['tags'][_pve_tag_name], _pve_tags)),
+            tags=list(map(lambda _pve_tag_name: _nb_objects['tags'][_pve_tag_name].id, _pve_tags)),
             custom_fields={
                 'autostart': pve_virtual_machine_config.get('onboot') == 1,
             }
@@ -136,7 +136,7 @@ def _process_pve_virtual_machine(
         nb_virtual_machine.vcpus = pve_virtual_machine_config['cores']
         nb_virtual_machine.memory = int(pve_virtual_machine_config['memory'])
         nb_virtual_machine.status = 'active' if _pve_virtual_machine['status'] == 'running' else 'offline'
-        nb_virtual_machine.tags = list(map(lambda _pve_tag_name: _nb_objects['tags'][_pve_tag_name], _pve_tags))
+        nb_virtual_machine.tags = list(map(lambda _pve_tag_name: _nb_objects['tags'][_pve_tag_name].id, _pve_tags))
         nb_virtual_machine.custom_fields['autostart'] = pve_virtual_machine_config.get('onboot') == 1
         nb_virtual_machine.save()
 
