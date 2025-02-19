@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.1]
+
 ### New
 
 - [#5] Allow to configure cluster ID.
