@@ -26,6 +26,7 @@ dependencies = [
 [project.urls]
 Homepage = "https://git.creekorful.cloud/creekorful/netbox-pve-sync"
 Issues = "https://git.creekorful.cloud/creekorful/netbox-pve-sync/issues"
+Changelog = "https://git.creekorful.cloud/creekorful/netbox-pve-sync/src/branch/main/CHANGELOG.md"
 
 [project.scripts]
 nbpxsync = "netbox_pve_sync:main"
