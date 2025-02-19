@@ -1,9 +1,16 @@
+# pylint: disable=fixme,too-many-branches
+
+"""
+netbox-pve-sync: Synchronize Proxmox Virtual Environment (PVE) information to a NetBox instance
+"""
+
 import os
 import sys
 from typing import Optional
 
 import pynetbox
-from proxmoxer import ProxmoxAPI
+import urllib3
+from proxmoxer import ProxmoxAPI, ResourceException
 
 
 def _load_nb_objects(_nb_api: pynetbox.api) -> dict:
@@ -103,7 +110,7 @@ def _process_pve_virtual_machine(
             .qemu(_pve_virtual_machine['vmid']) \
             .agent('network-get-interfaces') \
             .get()
-    except Exception:
+    except ResourceException:
         pve_virtual_machine_agent_interfaces = {'result': []}
 
     # Extract IP addresses from QEMU
@@ -386,6 +393,10 @@ def _process_pve_disk_size(_raw_disk_size: str) -> int:
 
 
 def main():
+    """
+    netbox-pve-sync main entrypoint
+    """
+
     # Instantiate connection to the Proxmox VE API
     pve_api = ProxmoxAPI(
         host=os.environ['PVE_API_HOST'],
@@ -445,4 +456,6 @@ def main():
 
 
 if __name__ == '__main__':
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
     main()
