@@ -125,7 +125,7 @@ def _process_pve_virtual_machine(
             serial=_pve_virtual_machine['vmid'],
             name=_pve_virtual_machine['name'],
             site=_nb_device.site.id,
-            cluster=1,  # TODO
+            cluster=os.environ.get('NB_CLUSTER_ID', 1),
             device=_nb_device.id,
             vcpus=pve_virtual_machine_config['cores'],
             memory=int(pve_virtual_machine_config['memory']),
