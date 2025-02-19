@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-## [0.1.1]
+## [0.1.1] - 19/02/2025
 
 ### New
 
@@ -12,6 +12,6 @@
 
 - Add eth0 as raw_interface_name.
 
-## [0.1.0]
+## [0.1.0] - 19/02/2025
 
 - Initial release.
