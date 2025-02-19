@@ -246,7 +246,7 @@ def _process_pve_virtual_machine_network_interface(
 
     # TODO: Improve Multiple IP address handling
     _pve_virtual_machine_ip_address = None
-    for raw_interface_name in ['ens18', 'ens19']:
+    for raw_interface_name in ['eth0', 'ens18', 'ens19']:
         if raw_interface_name in _pve_virtual_machine_ip_addresses:
             _pve_virtual_machine_ip_address = _pve_virtual_machine_ip_addresses[raw_interface_name][0]
             break
