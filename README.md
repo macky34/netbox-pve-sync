@@ -9,6 +9,12 @@ This script work by pulling VMs information from the PVE API and create/update/d
 
 ## Installation
 
+This package is available on PyPi. You can install it using pip.
+
+```
+$ pip install netbox-pve-sync
+```
+
 ## Configuration
 
 ### On NetBox
