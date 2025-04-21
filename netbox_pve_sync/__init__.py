@@ -98,7 +98,9 @@ def _process_pve_virtual_machine(
         _nb_objects: dict,
         _nb_device: any,
         _pve_tags: [str],
-        _pve_virtual_machine: dict
+        _pve_virtual_machine: dict,
+        _is_replicated: bool,
+        _has_ha: bool,
 ) -> dict:
     _pve_node_name = _nb_device.name.lower()
 
@@ -133,6 +135,8 @@ def _process_pve_virtual_machine(
             tags=list(map(lambda _pve_tag_name: _nb_objects['tags'][_pve_tag_name].id, _pve_tags)),
             custom_fields={
                 'autostart': pve_virtual_machine_config.get('onboot') == 1,
+                'replicated': _is_replicated,
+                'ha': _has_ha,
             }
         )
     else:
@@ -145,6 +149,8 @@ def _process_pve_virtual_machine(
         nb_virtual_machine.status = 'active' if _pve_virtual_machine['status'] == 'running' else 'offline'
         nb_virtual_machine.tags = list(map(lambda _pve_tag_name: _nb_objects['tags'][_pve_tag_name].id, _pve_tags))
         nb_virtual_machine.custom_fields['autostart'] = pve_virtual_machine_config.get('onboot') == 1
+        nb_virtual_machine.custom_fields['replicated'] = _is_replicated
+        nb_virtual_machine.custom_fields['ha'] = _has_ha
         nb_virtual_machine.save()
 
     # Handle the VM network interfaces
@@ -432,8 +438,19 @@ def main():
         if 'tags' in pve_vm_resource:
             pass  # TODO: pve_vm_tags[pve_vm_resource['vmid']].append(pve_vm_resource['tags'])
 
+    pve_ha_virtual_machine_ids = list(
+        map(
+            lambda r: int(r['sid'].split(':')[1]),
+            filter(lambda r: r['type'] == 'service', pve_api.cluster.ha.status.current.get())
+        )
+    )
+
     # Process Proxmox nodes
     for pve_node in pve_api.nodes.get():
+        pve_replicated_virtual_machine_ids = list(
+            map(lambda r: r['guest'], pve_api.nodes(pve_node['node']).replication.get())
+        )
+
         # This script does not create the hardware devices.
         nb_device = nb_objects['devices'].get(pve_node['node'].lower())
         if nb_device is None:
@@ -452,6 +469,8 @@ def main():
                 nb_device,
                 pve_vm_tags.get(pve_virtual_machine['vmid'], []),
                 pve_virtual_machine,
+                pve_virtual_machine['vmid'] in pve_replicated_virtual_machine_ids,
+                pve_virtual_machine['vmid'] in pve_ha_virtual_machine_ids,
             )
 
 

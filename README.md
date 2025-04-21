@@ -34,17 +34,19 @@ You'll also need to perform a minimal configuration on NetBox:
 - Create the cluster.
 - Add the following Custom Fields:
 
-| Name      | Object types    | Label     | Type    |
-|-----------|-----------------|-----------|---------|
-| autostart | Virtual Machine | Autostart | Boolean |
-| backup    | Virtual Disk    | Backup    | Boolean |
-| dns_name  | Prefix          | DNS Name  | Text    |
+| Name       | Object types    | Label      | Type    |
+|------------|-----------------|------------|---------|
+| autostart  | Virtual Machine | Autostart  | Boolean |
+| replicated | Virtual Machine | Replicated | Boolean |
+| ha         | Virtual Machine | Failover   | Boolean |
+| backup     | Virtual Disk    | Backup     | Boolean |
+| dns_name   | Prefix          | DNS Name   | Text    |
 
 ### On the PVE API
 
 You'll need to create a dedicated user (ex: netsync) on your PVE cluster and then create an API token.
 
-The user needs to have access to the VM.Monitor, Pool.Audit, VM.Audit permissions.
+The user needs to have access to the VM.Monitor, Pool.Audit, VM.Audit, Sys.Audit permissions.
 
 The following env variables will need to be set:
 
