@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- [#7] Improve tag handling.
+
 ## [0.2.0] - 21/04/2025
 
 ### New

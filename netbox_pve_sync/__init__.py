@@ -88,6 +88,7 @@ def _process_pve_tags(
                 slug=f'pool-{_pve_pool["poolid"]}'.lower(),
                 description=f'Proxmox pool {_pve_pool["poolid"]}',
             )
+            _nb_objects['tags'][_nb_tag.name] = _nb_tag
 
     return _nb_objects
 
@@ -433,7 +434,8 @@ def main():
     for pve_vm_resource in pve_api.cluster.resources.get(type='vm'):
         pve_vm_tags[pve_vm_resource['vmid']] = []
 
-        pve_vm_tags[pve_vm_resource['vmid']].append(f'Pool/{pve_vm_resource["pool"]}')
+        if 'pool' in pve_vm_resource:
+            pve_vm_tags[pve_vm_resource['vmid']].append(f'Pool/{pve_vm_resource["pool"]}')
 
         if 'tags' in pve_vm_resource:
             pass  # TODO: pve_vm_tags[pve_vm_resource['vmid']].append(pve_vm_resource['tags'])
