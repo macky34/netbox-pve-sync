@@ -27,6 +27,9 @@ The following env variables will need to be set:
 - **NB_API_URL**: The URL to your NetBox instance. (ex: https://netbox.example.org)
 - **NB_API_TOKEN**: The token created previously. (ex: f74cb99cf552b7005fd1a616b53efba2ce0c9656)
 
+You can also set the `NB_CLUSTER_ID` env variable in order to indicate the ID of the cluster that will be used in
+NetBox.
+
 You'll also need to perform a minimal configuration on NetBox:
 
 - Create the physical nodes hosting the cluster. (The name should match the one on Proxmox, so that the script can
