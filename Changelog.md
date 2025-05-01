@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 01/05/2025
+
 ### Fixed
 
 - [#7] Improve tag handling.
