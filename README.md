@@ -63,5 +63,5 @@ The following env variables will need to be set:
 You can then execute the script using the following command:
 
 ```
-PVE_API_HOST=xx PVE_API_USER=xx PVE_API_TOKEN=xx PVE_API_SECRET=xx NB_API_URL=xx NB_API_TOKEN=xx python3 -m netbox_pve_sync
+PVE_API_HOST=xx PVE_API_USER=xx PVE_API_TOKEN=xx PVE_API_SECRET=xx NB_API_URL=xx NB_API_TOKEN=xx nbpxsync
 ```
