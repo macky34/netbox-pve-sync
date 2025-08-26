@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.2.3] - 26/08/2025
+
+### Fixed
+
+- Allow VM disk sizes in Megabytes.
+
 ## [0.2.2] - 07/05/2025
 
 ### Fixed
