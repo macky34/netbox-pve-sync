@@ -420,6 +420,7 @@ def main():
         url=os.environ['NB_API_URL'],
         token=os.environ['NB_API_TOKEN'],
     )
+    nb_api.http_session.verify = os.getenv('NB_API_HTTP_SESSION_VERIFY', 'true').lower() == 'true'
 
     # Load NetBox objects
     nb_objects = _load_nb_objects(nb_api)
