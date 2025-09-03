@@ -6,7 +6,9 @@ netbox-pve-sync: Synchronize Proxmox Virtual Environment (PVE) information to a 
 
 import os
 import sys
+import random
 from typing import Optional
+import pprint
 
 import pynetbox
 import urllib3
@@ -76,9 +78,23 @@ def _process_pve_tags(
         _nb_api: pynetbox.api,
         _nb_objects: dict,
 ) -> dict:
-    # TODO: First tags
-
+    # First tags
+    for _pve_resource_vm in _pve_api.cluster.resources.get(type='vm'):
+        if 'tags' in _pve_resource_vm:
+            _tag_names = _pve_resource_vm['tags'].split(';') if 'tags' in _pve_resource_vm else []
+            for _tag_name in _tag_names:
+                _nb_tag = _nb_objects['tags'].get(_tag_name)
+                if _nb_tag is None:
+                    _nb_tag = _nb_api.extras.tags.create(
+                        name=_tag_name,
+                        slug=_tag_name.lower().replace(' ',''),
+                        description='Proxmox VM tag',
+                        color=format(random.randint(0, 0xFFFFFF), '06x')
+                    )
+                    _nb_objects['tags'][_nb_tag.name] = _nb_tag
+                
     # Then pool (we treat them as tags)
+
     for _pve_pool in _pve_api.pools.get():
         _tag_name = f'Pool/{_pve_pool["poolid"]}'
         _nb_tag = _nb_objects['tags'].get(_tag_name)
@@ -441,7 +457,7 @@ def main():
             pve_vm_tags[pve_vm_resource['vmid']].append(f'Pool/{pve_vm_resource["pool"]}')
 
         if 'tags' in pve_vm_resource:
-            pass  # TODO: pve_vm_tags[pve_vm_resource['vmid']].append(pve_vm_resource['tags'])
+            pve_vm_tags[pve_vm_resource['vmid']].extend(pve_vm_resource['tags'].split(';'))
 
     pve_ha_virtual_machine_ids = list(
         map(

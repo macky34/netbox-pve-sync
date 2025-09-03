@@ -6,9 +6,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "netbox-pve-sync"
-version = "0.2.3+custom.1"
+version = "0.2.3+custom.2"
 authors = [
     { name = "Aloïs Micard", email = "alois@micard.lu" },
+    { name = "Takuya Makino" },
 ]
 description = "Synchronize Proxmox Virtual Environment (PVE) information to a NetBox instance"
 readme = "README.md"
