@@ -8,7 +8,6 @@ import os
 import sys
 import random
 from typing import Optional
-import pprint
 
 import pynetbox
 import urllib3
@@ -89,7 +88,8 @@ def _process_pve_tags(
                         name=_tag_name,
                         slug=_tag_name.lower().replace(' ',''),
                         description='Proxmox VM tag',
-                        color=format(random.randint(0, 0xFFFFFF), '06x')
+                        color=format(random.randint(0, 0xFFFFFF), '06x'),
+                        object_types=['virtualization.virtualmachine']
                     )
                     _nb_objects['tags'][_nb_tag.name] = _nb_tag
                 

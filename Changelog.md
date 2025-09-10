@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.2.3+custom.2] - 10/09/2025
+
+### New
+
+- Add tag management feature.
+
+## [0.2.3+custom.1] - 04/09/2025
+
+### New
+
+- Make netbox http_session.verify configurable.
+
 ## [0.2.3] - 26/08/2025
 
 ### Fixed
