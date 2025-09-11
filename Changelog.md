@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.2.3+custom.3] - 11/09/2025
+
+### Fixed
+
+- Add support for flexible subnet prefix lengths.
+
 ## [0.2.3+custom.2] - 10/09/2025
 
 ### New

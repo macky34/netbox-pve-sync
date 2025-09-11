@@ -7,6 +7,7 @@ netbox-pve-sync: Synchronize Proxmox Virtual Environment (PVE) information to a 
 import os
 import sys
 import random
+from ipaddress import ip_network, ip_interface
 from typing import Optional
 
 import pynetbox
@@ -94,7 +95,6 @@ def _process_pve_tags(
                     _nb_objects['tags'][_nb_tag.name] = _nb_tag
                 
     # Then pool (we treat them as tags)
-
     for _pve_pool in _pve_api.pools.get():
         _tag_name = f'Pool/{_pve_pool["poolid"]}'
         _nb_tag = _nb_objects['tags'].get(_tag_name)
@@ -275,13 +275,11 @@ def _process_pve_virtual_machine_network_interface(
             break
 
     if _pve_virtual_machine_ip_address is not None:
-        _virtual_machine_address = _pve_virtual_machine_ip_address['ip-address']
-        _virtual_machine_address_mask = _pve_virtual_machine_ip_address['prefix']
-        _virtual_machine_full_address = f'{_virtual_machine_address}/{_virtual_machine_address_mask}'
+        _virtual_machine_full_address = f"{_pve_virtual_machine_ip_address['ip-address']}/{_pve_virtual_machine_ip_address['prefix']}"
 
         # First, determinate if the prefix exists
-        _prefix_network_address = '.'.join(_virtual_machine_address.split('.')[:-1]) + '.0'
-        _prefix_network_full_address = f'{_prefix_network_address}/{_virtual_machine_address_mask}'
+        _ip_interface = ip_interface(_virtual_machine_full_address)
+        _prefix_network_full_address = str(ip_network(_ip_interface.network))
 
         nb_prefix = _nb_objects['prefixes'].get(_prefix_network_full_address)
         if nb_prefix is None:
