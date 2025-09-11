@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.2.3+custom4] - 11/09/2025
+
+### New
+
+- Add support for hostname and platform.
+
 ## [0.2.3+custom.3] - 11/09/2025
 
 ### Fixed

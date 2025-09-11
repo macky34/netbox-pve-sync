@@ -44,6 +44,7 @@ You'll also need to perform a minimal configuration on NetBox:
 | autostart  | Virtual Machine | Autostart  | Boolean |
 | replicated | Virtual Machine | Replicated | Boolean |
 | ha         | Virtual Machine | Failover   | Boolean |
+| hostname   | Virtual Machine | Hostname   | Text    |
 | backup     | Virtual Disk    | Backup     | Boolean |
 | dns_name   | Prefix          | DNS Name   | Text    |
 

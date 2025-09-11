@@ -26,6 +26,7 @@ def _load_nb_objects(_nb_api: pynetbox.api) -> dict:
         'vlans': {},
         'disks': {},
         'tags': {},
+        'platforms': {},
     }
 
     # Load NetBox devices
@@ -70,6 +71,10 @@ def _load_nb_objects(_nb_api: pynetbox.api) -> dict:
     for _nb_tag in _nb_api.extras.tags.all():
         _nb_objects['tags'][_nb_tag.name] = _nb_tag
 
+    # Load NetBox platforms
+    for _nb_platform in _nb_api.dcim.platforms.all():
+        _nb_objects['platforms'][_nb_platform.name] = _nb_platform
+
     return _nb_objects
 
 
@@ -109,6 +114,29 @@ def _process_pve_tags(
     return _nb_objects
 
 
+def _process_pve_platform(
+        _nb_api: pynetbox.api,
+        _nb_objects: dict,
+        _platform_name: str,
+) -> dict:
+    if not _platform_name:
+        return _nb_objects
+
+    if _platform_name not in _nb_objects['platforms']:
+        platform = _nb_api.dcim.platforms.create(
+            name=_platform_name,
+            slug=_platform_name
+                .lower()
+                .replace(' ', '-')
+                .replace('.', '-')
+                .replace('(', '')
+                .replace(')', '')
+        )
+        _nb_objects['platforms'][_platform_name] = platform
+
+    return _nb_objects
+
+
 def _process_pve_virtual_machine(
         _pve_api: ProxmoxAPI,
         _nb_api: pynetbox.api,
@@ -123,19 +151,30 @@ def _process_pve_virtual_machine(
 
     pve_virtual_machine_config = _pve_api.nodes(_pve_node_name).qemu(_pve_virtual_machine['vmid']).config.get()
 
-    try:
-        pve_virtual_machine_agent_interfaces = _pve_api \
-            .nodes(_pve_node_name) \
-            .qemu(_pve_virtual_machine['vmid']) \
-            .agent('network-get-interfaces') \
-            .get()
-    except ResourceException:
-        pve_virtual_machine_agent_interfaces = {'result': []}
+    # Get QEMU agent information
+    pve_agent_info = {
+        'network-get-interfaces': {'result': []},
+        'get-osinfo': {'result': {}},
+        'get-host-name': {'result': {}}
+    }
+    
+    for agent_command in pve_agent_info.keys():
+        try:
+            pve_agent_info[agent_command] = _pve_api \
+                .nodes(_pve_node_name) \
+                .qemu(_pve_virtual_machine['vmid']) \
+                .agent(agent_command) \
+                .get()
+        except ResourceException:
+            continue
 
     # Extract IP addresses from QEMU
     pve_virtual_machine_ip_addresses = {}
-    for result in pve_virtual_machine_agent_interfaces['result']:
+    for result in pve_agent_info['network-get-interfaces']['result']:
         pve_virtual_machine_ip_addresses[result['name']] = result['ip-addresses']
+    
+    os_name = pve_agent_info['get-osinfo']['result'].get('pretty-name', '')
+    hostname = pve_agent_info['get-host-name']['result'].get('host-name', '')
 
     # Create the virtual machine if it exists, update it otherwise
     nb_virtual_machine = _nb_objects['virtual_machines'].get(str(_pve_virtual_machine['vmid']))
@@ -150,10 +189,13 @@ def _process_pve_virtual_machine(
             memory=int(pve_virtual_machine_config['memory']),
             status='active' if _pve_virtual_machine['status'] == 'running' else 'offline',
             tags=list(map(lambda _pve_tag_name: _nb_objects['tags'][_pve_tag_name].id, _pve_tags)),
+            platform=_nb_objects['platforms'][os_name] if os_name else None,
+            comments=pve_virtual_machine_config['description'] if 'description' in pve_virtual_machine_config else '',
             custom_fields={
                 'autostart': pve_virtual_machine_config.get('onboot') == 1,
                 'replicated': _is_replicated,
                 'ha': _has_ha,
+                'hostname': hostname
             }
         )
     else:
@@ -165,9 +207,12 @@ def _process_pve_virtual_machine(
         nb_virtual_machine.memory = int(pve_virtual_machine_config['memory'])
         nb_virtual_machine.status = 'active' if _pve_virtual_machine['status'] == 'running' else 'offline'
         nb_virtual_machine.tags = list(map(lambda _pve_tag_name: _nb_objects['tags'][_pve_tag_name].id, _pve_tags))
+        nb_virtual_machine.platform = _nb_objects['platforms'].get(os_name) if os_name else None
+        nb_virtual_machine.comments = pve_virtual_machine_config['description'] if 'description' in pve_virtual_machine_config else ''
         nb_virtual_machine.custom_fields['autostart'] = pve_virtual_machine_config.get('onboot') == 1
         nb_virtual_machine.custom_fields['replicated'] = _is_replicated
         nb_virtual_machine.custom_fields['ha'] = _has_ha
+        nb_virtual_machine.custom_fields['hostname'] = hostname
         nb_virtual_machine.save()
 
     # Handle the VM network interfaces
@@ -445,6 +490,19 @@ def main():
         nb_api,
         nb_objects,
     )
+
+    # Process Proxmox platforms
+    for pve_vm_resource in pve_api.cluster.resources.get(type='vm'):
+        try:
+            os_info = pve_api \
+                .nodes(pve_vm_resource['node']) \
+                .qemu(pve_vm_resource['vmid']) \
+                .agent('get-osinfo') \
+                .get()
+            if 'result' in os_info and 'pretty-name' in os_info['result']:
+                _process_pve_platform(nb_api, nb_objects, os_info['result']['pretty-name'])
+        except ResourceException:
+            continue
 
     # Fetch VM tags from Proxmox
     pve_vm_tags = {}
