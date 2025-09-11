@@ -88,6 +88,8 @@ def _process_pve_tags(
         if 'tags' in _pve_resource_vm:
             _tag_names = _pve_resource_vm['tags'].split(';') if 'tags' in _pve_resource_vm else []
             for _tag_name in _tag_names:
+                if not _tag_name.strip():
+                    continue
                 _nb_tag = _nb_objects['tags'].get(_tag_name)
                 if _nb_tag is None:
                     _nb_tag = _nb_api.extras.tags.create(
@@ -513,7 +515,10 @@ def main():
             pve_vm_tags[pve_vm_resource['vmid']].append(f'Pool/{pve_vm_resource["pool"]}')
 
         if 'tags' in pve_vm_resource:
-            pve_vm_tags[pve_vm_resource['vmid']].extend(pve_vm_resource['tags'].split(';'))
+            pve_vm_tags[pve_vm_resource['vmid']].extend([
+                tag for tag in pve_vm_resource['tags'].split(';')
+                if tag.strip()
+            ])
 
     pve_ha_virtual_machine_ids = list(
         map(
