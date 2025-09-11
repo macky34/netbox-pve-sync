@@ -544,6 +544,10 @@ def main():
 
         # Process Proxmox virtual machines per node
         for pve_virtual_machine in pve_api.nodes(pve_node['node']).qemu.get():
+            # Skip template VMs
+            if pve_virtual_machine.get('template', 0) == 1:
+                continue
+
             _process_pve_virtual_machine(
                 pve_api,
                 nb_api,
