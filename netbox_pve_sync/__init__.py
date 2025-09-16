@@ -110,6 +110,8 @@ def _process_pve_tags(
                 name=_tag_name,
                 slug=f'pool-{_pve_pool["poolid"]}'.lower(),
                 description=f'Proxmox pool {_pve_pool["poolid"]}',
+                color=format(random.randint(0, 0xFFFFFF), '06x'),
+                object_types=['virtualization.virtualmachine']
             )
             _nb_objects['tags'][_nb_tag.name] = _nb_tag
 
@@ -133,6 +135,7 @@ def _process_pve_platform(
                 .replace('.', '-')
                 .replace('(', '')
                 .replace(')', '')
+                .replace('/', '-')
         )
         _nb_objects['platforms'][_platform_name] = platform
 
@@ -173,7 +176,7 @@ def _process_pve_virtual_machine(
     # Extract IP addresses from QEMU
     pve_virtual_machine_ip_addresses = {}
     for result in pve_agent_info['network-get-interfaces']['result']:
-        pve_virtual_machine_ip_addresses[result['name']] = result['ip-addresses']
+        pve_virtual_machine_ip_addresses[result['name']] = result.get('ip-addresses', '')
     
     os_name = pve_agent_info['get-osinfo']['result'].get('pretty-name', '')
     hostname = pve_agent_info['get-host-name']['result'].get('host-name', '')
@@ -316,8 +319,10 @@ def _process_pve_virtual_machine_network_interface(
 
     # TODO: Improve Multiple IP address handling
     _pve_virtual_machine_ip_address = None
-    for raw_interface_name in ['eth0', 'ens18', 'ens19']:
+    for raw_interface_name in ['eth0', 'ens18', 'ens19', 'enp6s18', 'enp6s19']:
         if raw_interface_name in _pve_virtual_machine_ip_addresses:
+            if len(_pve_virtual_machine_ip_addresses[raw_interface_name]) == 0:
+                continue
             _pve_virtual_machine_ip_address = _pve_virtual_machine_ip_addresses[raw_interface_name][0]
             break
 

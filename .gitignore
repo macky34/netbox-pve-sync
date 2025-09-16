@@ -1,3 +1,8 @@
 dist/
 *.egg-info/
 netbox_pve_sync/__pycache__/__init__.cpython-39.pyc
+__pycache__/
+*.pyc
+.*
+.gitignore
+.env
